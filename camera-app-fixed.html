@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cámara Simple - Mejorada</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: #222;
+            color: white;
+            padding: 10px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            margin: 20px 0;
+            font-size: 1.5em;
+        }
+
+        .video-area {
+            position: relative;
+            background: #000;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            min-height: 300px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        video {
+            width: 100%;
+            border-radius: 10px;
+            display: none;
+        }
+
+        .message {
+            padding: 20px;
+            text-align: center;
+            color: #888;
+        }
+
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        button {
+            padding: 15px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        .start-btn {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .stop-btn {
+            background: #f44336;
+            color: white;
+        }
+
+        .record-btn {
+            background: #2196F3;
+            color: white;
+        }
+
+        .permission-btn {
+            background: #ff9800;
+            color: white;
+        }
+
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+
+        .info {
+            background: #333;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        .debug {
+            background: #444;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            font-size: 12px;
+            color: #ccc;
+            white-space: pre-wrap;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .alert {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            text-align: center;
+        }
+
+        .success { background: #4CAF50; }
+        .error { background: #f44336; }
+        .warning { background: #ff9800; }
+        .info { background: #2196F3; }
+
+        .recording {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: red;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 12px;
+            display: none;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0.5; }
+        }
+
+        .permission-help {
+            background: #444;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            display: none;
+        }
+
+        .permission-help h3 {
+            color: #ff9800;
+            margin-bottom: 10px;
+        }
+
+        .permission-help ol {
+            margin-left: 20px;
+            line-height: 1.6;
+        }
+
+        .permission-help li {
+            margin-bottom: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📱 Cámara Simple - Mejorada</h1>
+        
+        <div class="video-area">
+            <video id="video" autoplay muted playsinline></video>
+            <div id="message" class="message">
+                Presiona "Iniciar" para activar la cámara
+            </div>
+            <div id="recording" class="recording">● REC</div>
+        </div>
+
+        <div class="controls">
+            <button id="startBtn" class="start-btn">🎥 Iniciar Cámara</button>
+            <button id="permissionBtn" class="permission-btn" style="display: none;">🔐 Solicitar Permisos</button>
+            <button id="stopBtn" class="stop-btn" disabled>⏹ Detener</button>
+            <button id="recordBtn" class="record-btn" disabled>🔴 Grabar Video</button>
+        </div>
+
+        <div id="alerts"></div>
+
+        <div class="permission-help" id="permissionHelp">
+            <h3>🔐 Cómo habilitar permisos de cámara:</h3>
+            <ol>
+                <li><strong>Chrome Android:</strong> Toca el ícono de candado/información junto a la URL → Permisos → Cámara → Permitir</li>
+                <li><strong>Firefox Android:</strong> Toca el escudo/candado → Permisos → Cámara → Permitir</li>
+                <li><strong>Si usas un archivo local:</strong> Abre Chrome → Configuración → Privacidad → Configuración del sitio → Cámara → Agregar excepción para file://</li>
+                <li><strong>Alternativa:</strong> Sube el archivo a un servidor web (GitHub Pages, Netlify, etc.)</li>
+            </ol>
+        </div>
+
+        <div class="info">
+            <div><strong>Estado:</strong> <span id="status">Inactivo</span></div>
+            <div><strong>Navegador:</strong> <span id="browser"></span></div>
+            <div><strong>Dispositivo:</strong> <span id="device"></span></div>
+            <div><strong>Protocolo:</strong> <span id="protocol"></span></div>
+            <div><strong>Permisos:</strong> <span id="permissions">Verificando...</span></div>
+        </div>
+
+        <div id="debug" class="debug"></div>
+    </div>
+
+    <script>
+        let video, stream, mediaRecorder;
+        let isRecording = false;
+        let chunks = [];
+
+        // Referencias a elementos
+        const videoEl = document.getElementById('video');
+        const messageEl = document.getElementById('message');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const recordBtn = document.getElementById('recordBtn');
+        const permissionBtn = document.getElementById('permissionBtn');
+        const statusEl = document.getElementById('status');
+        const alertsEl = document.getElementById('alerts');
+        const debugEl = document.getElementById('debug');
+        const recordingEl = document.getElementById('recording');
+        const permissionHelpEl = document.getElementById('permissionHelp');
+        const permissionsEl = document.getElementById('permissions');
+
+        // Información del dispositivo
+        document.getElementById('browser').textContent = navigator.userAgent.includes('Chrome') ? 'Chrome' : 
+                                                       navigator.userAgent.includes('Firefox') ? 'Firefox' : 'Otro';
+        document.getElementById('device').textContent = /Android/i.test(navigator.userAgent) ? 'Android' : 'Otro';
+        document.getElementById('protocol').textContent = location.protocol;
+
+        function log(message) {
+            console.log(message);
+            const timestamp = new Date().toLocaleTimeString();
+            debugEl.textContent += `${timestamp}: ${message}\n`;
+            debugEl.scrollTop = debugEl.scrollHeight;
+        }
+
+        function showAlert(message, type = 'info') {
+            const alert = document.createElement('div');
+            alert.className = `alert ${type}`;
+            alert.textContent = message;
+            alertsEl.appendChild(alert);
+            
+            setTimeout(() => {
+                if (alert.parentNode) {
+                    alert.parentNode.removeChild(alert);
+                }
+            }, 5000);
+        }
+
+        async function checkPermissions() {
+            log('Verificando permisos de cámara...');
+            
+            try {
+                if (navigator.permissions) {
+                    const permission = await navigator.permissions.query({ name: 'camera' });
+                    log(`Estado de permisos: ${permission.state}`);
+                    permissionsEl.textContent = permission.state;
+                    
+                    if (permission.state === 'denied') {
+                        showAlert('Permisos de cámara denegados. Revisa la configuración del navegador.', 'error');
+                        permissionHelpEl.style.display = 'block';
+                        return false;
+                    } else if (permission.state === 'prompt') {
+                        showAlert('Se solicitarán permisos al iniciar la cámara', 'info');
+                        return true;
+                    } else {
+                        showAlert('Permisos de cámara concedidos', 'success');
+                        return true;
+                    }
+                } else {
+                    log('API de permisos no disponible');
+                    permissionsEl.textContent = 'No disponible';
+                    return true;
+                }
+            } catch (error) {
+                log('Error verificando permisos: ' + error.message);
+                permissionsEl.textContent = 'Error';
+                return true;
+            }
+        }
+
+        async function checkCameraSupport() {
+            log('Verificando soporte de cámara...');
+            
+            if (!navigator.mediaDevices) {
+                log('ERROR: navigator.mediaDevices no disponible');
+                showAlert('Tu navegador no soporta acceso a cámara', 'error');
+                return false;
+            }
+            
+            if (!navigator.mediaDevices.getUserMedia) {
+                log('ERROR: getUserMedia no disponible');
+                showAlert('getUserMedia no disponible en tu navegador', 'error');
+                return false;
+            }
+            
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const cameras = devices.filter(d => d.kind === 'videoinput');
+                log(`Cámaras encontradas: ${cameras.length}`);
+                
+                if (cameras.length === 0) {
+                    showAlert('No se detectaron cámaras en el dispositivo', 'error');
+                    return false;
+                }
+                
+                return true;
+            } catch (e) {
+                log('ERROR verificando dispositivos: ' + e.message);
+                return true; // Asumir que hay cámara
+            }
+        }
+
+        async function requestCameraPermission() {
+            log('Solicitando permisos de cámara explícitamente...');
+            
+            try {
+                // Intentar acceder brevemente para disparar el prompt de permisos
+                const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                tempStream.getTracks().forEach(track => track.stop());
+                
+                showAlert('Permisos concedidos correctamente', 'success');
+                permissionsEl.textContent = 'granted';
+                permissionBtn.style.display = 'none';
+                permissionHelpEl.style.display = 'none';
+                
+                return true;
+            } catch (error) {
+                log('Error solicitando permisos: ' + error.message);
+                
+                if (error.name === 'NotAllowedError') {
+                    showAlert('Permisos denegados. Revisa la configuración del navegador.', 'error');
+                    permissionHelpEl.style.display = 'block';
+                    permissionsEl.textContent = 'denied';
+                } else {
+                    showAlert('Error al solicitar permisos: ' + error.message, 'error');
+                }
+                
+                return false;
+            }
+        }
+
+        async function startCamera() {
+            log('Intentando iniciar cámara...');
+            
+            const hasCamera = await checkCameraSupport();
+            if (!hasCamera) {
+                return;
+            }
+            
+            const hasPermissions = await checkPermissions();
+            if (!hasPermissions) {
+                permissionBtn.style.display = 'block';
+                return;
+            }
+            
+            // Configuraciones a probar (de más simple a más compleja)
+            const configs = [
+                { video: { width: 320, height: 240 } }, // Resolución baja para mejor compatibilidad
+                { video: true },
+                { video: { width: 640, height: 480 } },
+                { video: { facingMode: 'environment' } },
+                { video: { facingMode: 'user' } },
+                { video: { width: { ideal: 1280 }, height: { ideal: 720 } } }
+            ];
+            
+            for (let i = 0; i < configs.length; i++) {
+                try {
+                    log(`Probando configuración ${i + 1}: ${JSON.stringify(configs[i])}`);
+                    stream = await navigator.mediaDevices.getUserMedia(configs[i]);
+                    
+                    videoEl.srcObject = stream;
+                    videoEl.style.display = 'block';
+                    messageEl.style.display = 'none';
+                    
+                    // Esperar a que el video esté listo
+                    await new Promise((resolve, reject) => {
+                        videoEl.onloadedmetadata = resolve;
+                        videoEl.onerror = reject;
+                        setTimeout(reject, 5000); // Timeout de 5 segundos
+                    });
+                    
+                    startBtn.disabled = true;
+                    stopBtn.disabled = false;
+                    recordBtn.disabled = false;
+                    statusEl.textContent = 'Cámara activa';
+                    permissionBtn.style.display = 'none';
+                    permissionHelpEl.style.display = 'none';
+                    
+                    const track = stream.getVideoTracks()[0];
+                    const settings = track.getSettings();
+                    log(`¡Cámara iniciada! Resolución: ${settings.width}x${settings.height}`);
+                    showAlert(`Cámara activa (${settings.width}x${settings.height})`, 'success');
+                    
+                    return;
+                    
+                } catch (error) {
+                    log(`Config ${i + 1} falló: ${error.name} - ${error.message}`);
+                    
+                    if (stream) {
+                        stream.getTracks().forEach(track => track.stop());
+                        stream = null;
+                    }
+                    
+                    if (error.name === 'NotAllowedError') {
+                        showAlert('Permisos denegados. Usa el botón de permisos o revisa la configuración.', 'error');
+                        permissionBtn.style.display = 'block';
+                        permissionHelpEl.style.display = 'block';
+                        return;
+                    }
+                }
+            }
+            
+            // Si llegamos aquí, todas las configuraciones fallaron
+            showAlert('No se pudo acceder a la cámara con ninguna configuración.', 'error');
+            log('ERROR: Todas las configuraciones fallaron');
+        }
+
+        function stopCamera() {
+            log('Deteniendo cámara...');
+            
+            if (isRecording) {
+                stopRecording();
+            }
+            
+            if (stream) {
+                stream.getTracks().forEach(track => {
+                    track.stop();
+                    log(`Track detenido: ${track.kind}`);
+                });
+                stream = null;
+            }
+            
+            videoEl.style.display = 'none';
+            messageEl.style.display = 'block';
+            messageEl.textContent = 'Cámara detenida';
+            
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            recordBtn.disabled = true;
+            statusEl.textContent = 'Inactivo';
+            
+            showAlert('Cámara detenida', 'warning');
+        }
+
+        function startRecording() {
+            if (!stream) {
+                showAlert('Inicia la cámara primero', 'error');
+                return;
+            }
+            
+            log('Iniciando grabación...');
+            chunks = [];
+            
+            try {
+                // Detectar formato soportado
+                const types = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4'];
+                let mimeType = '';
+                
+                for (const type of types) {
+                    if (MediaRecorder.isTypeSupported(type)) {
+                        mimeType = type;
+                        break;
+                    }
+                }
+                
+                log(`Usando formato: ${mimeType || 'default'}`);
+                
+                const options = mimeType ? { mimeType } : {};
+                mediaRecorder = new MediaRecorder(stream, options);
+                
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        chunks.push(event.data);
+                        log(`Chunk recibido: ${event.data.size} bytes`);
+                    }
+                };
+                
+                mediaRecorder.onstop = () => {
+                    log('Grabación detenida, creando archivo...');
+                    const blob = new Blob(chunks, { type: mimeType || 'video/webm' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `video_${Date.now()}.${mimeType.includes('mp4') ? 'mp4' : 'webm'}`;
+                    
+                    // Intentar descargar automáticamente
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    
+                    URL.revokeObjectURL(url);
+                    showAlert(`Video guardado (${(blob.size / 1024 / 1024).toFixed(2)} MB)`, 'success');
+                };
+                
+                mediaRecorder.onerror = (event) => {
+                    log('Error en grabación: ' + event.error);
+                    showAlert('Error durante la grabación', 'error');
+                };
+                
+                mediaRecorder.start(1000); // Recopilar datos cada segundo
+                isRecording = true;
+                recordBtn.textContent = '⏹ Detener Grabación';
+                recordingEl.style.display = 'block';
+                
+                log('Grabación iniciada exitosamente');
+                showAlert('Grabando video...', 'success');
+                
+            } catch (error) {
+                log('ERROR en grabación: ' + error.message);
+                showAlert('Error al iniciar grabación: ' + error.message, 'error');
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && isRecording) {
+                log('Deteniendo grabación...');
+                mediaRecorder.stop();
+                isRecording = false;
+                recordBtn.textContent = '🔴 Grabar Video';
+                recordingEl.style.display = 'none';
+            }
+        }
+
+        function toggleRecording() {
+            if (isRecording) {
+                stopRecording();
+            } else {
+                startRecording();
+            }
+        }
+
+        // Event listeners
+        startBtn.onclick = startCamera;
+        stopBtn.onclick = stopCamera;
+        recordBtn.onclick = toggleRecording;
+        permissionBtn.onclick = requestCameraPermission;
+
+        // Información inicial
+        log('App iniciada - Versión mejorada');
+        log('UserAgent: ' + navigator.userAgent);
+        log('Protocolo: ' + location.protocol);
+        log('Host: ' + location.host);
+        
+        // Verificar contexto de seguridad
+        if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.protocol !== 'file:') {
+            showAlert('⚠️ Usa HTTPS para mejor compatibilidad con cámara', 'warning');
+        }
+        
+        // Verificar permisos al cargar
+        checkPermissions();
+    </script>
+</body>
+</html>
